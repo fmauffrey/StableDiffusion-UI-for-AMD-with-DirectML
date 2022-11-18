@@ -1,8 +1,8 @@
 # StableDiffusion-UI
 
 This is a simple UI for stable diffusion using DirectML (https://gist.github.com/averad/256c507baa3dcc9464203dc14610d674) made with tkinter.
-With this, you don't need to reload the model for each generation, allowing faster and more pleasant sessions.
-Improvements are still needed but it works well. This is not dummy proof, it might crash of you use inapropriate values (such as letters for the seed).
+With this, you don't need to reload the model for each generation, allowing faster and more pleasant sessions.  
+Improvements are still needed but it works well. This is not dummy proof, it might crash of you use inapropriate values (such as letters for the seed).  
 More coming (inpainting and image to image interfaces) ...
 
 ## Install
