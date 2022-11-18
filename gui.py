@@ -142,7 +142,7 @@ if __name__ == "__main__":
 
     # Main window
     root = Tk()
-    root.title("Stable Chatoune")
+    root.title("Stable UI")
     root.geometry('1200x600')
     root.resizable(False, False)
 
