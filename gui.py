@@ -55,12 +55,14 @@ def generate(mode):
         new_image = PhotoImage(file=f"images/explore/{values['Output']}_{seeds[0]}.png")
         smaller_image = new_image.subsample(2, 2)
         canvas_explore.create_image(0, 0, anchor=NW, image=smaller_image)
-	# delete previous seed if any
-	text_seed1.delete(0, "end")
+
+        # delete previous seed if any
+        text_seed1.delete(0, "end")
         text_seed2.delete(0, "end")
         text_seed3.delete(0, "end")
         text_seed4.delete(0, "end")
-	# add new seeds
+
+        # add new seeds
         text_seed1.insert(0, seeds[0])
         text_seed2.insert(0, seeds[1])
         text_seed3.insert(0, seeds[2])
