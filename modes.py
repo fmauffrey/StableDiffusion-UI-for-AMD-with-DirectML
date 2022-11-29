@@ -114,3 +114,9 @@ def merge_variations(images, varia1, varia2, name):
 
     # Save final image
     composite.save(name)
+
+
+def inpainting(values, pipe):
+    image = pipe(prompt=values["Prompt"], image=Image.open(values["Image"]), mask_image=Image.open("images/mask.png"),
+                 guidance_scale=values["Guidance scale"]).images[0]
+    image.save(f"{values['Output']}.png")
