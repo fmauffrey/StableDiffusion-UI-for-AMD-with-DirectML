@@ -10,6 +10,11 @@ Ugly look for the moment. Better to come.
 
 After installing Stable diffusion following @averad instructions, simply download the 3 scripts in the same folder.
 
+## Dependencies
+```
+pip install customtkinter
+```
+
 ## Main GUI
 
 To start the GUI, activate the environment then run the gui.py script.
