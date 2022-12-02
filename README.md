@@ -1,17 +1,17 @@
 # StableDiffusion-UI
 
-This is a simple UI for stable diffusion using DirectML (https://gist.github.com/averad/256c507baa3dcc9464203dc14610d674) made with tkinter.
-With this, you don't need to reload the model for each generation, allowing faster and more pleasant sessions.  
-Improvements are still needed but it works well. This is not dummy proof, it might crash of you use inapropriate values (such as letters for the seed).  
+Simple UI for stable diffusion using DirectML (https://gist.github.com/averad/256c507baa3dcc9464203dc14610d674) 
+made with tkinter. Two UI are available, for classic text to image generation and for inpainting.
 
-Ugly look for the moment. Better to come.
-
-## Install
+## Use
 
 After installing Stable diffusion following @averad instructions, simply download the 3 scripts in the same folder.
+Some dependencies are required (see below).
 
 ## Dependencies
+Install the following dependencies in the same environment you created then execute:
 ```
+# Modern layout for tkinter
 pip install customtkinter
 ```
 
@@ -44,4 +44,13 @@ To start the GUI, activate the environment then run the gui_inpainting.py script
 sd_env\scripts\activate
 python gui_inpainting.py
 ```
-Here you will have 2 picture frames, for input (left) and output (right). Load the input image using the "load" button. The image will be automatically resized to 512*512 and appear in the left image frame. Directly paint in white the areas you want to regenerate by clicking on the canvas. You can modify the brush size and clear the image by clicking on the "clear" button. Everything not in pure white will be converted into black. You can also paint in black on the canvas but use it only to cover white areas on your image that you do not want to be regenerated. After setting your prompts and parameters, click on "Generate" to start the inpainting. The output image will appear in the right frame and saved in "/images/inpainting".
+
+![inpainting](example/example_inpaiting.png)
+
+1. Import you image. It will be resized to 512*512 automatically and displayed in the left canvas.
+2. Choose the parameters for inpainting. The image will be saved in the /images/inpainting folder under the name given 
+as output.
+3. Paint on the image directly in the canvas. Inpainting will target only white areas. All pixel that are not pure white
+will be converted into black to create the mask. To avoid inpainting in white areas of your image, you can also paint
+in black.
+4. Generate the new image with the given parameters. Once generated, it will be displayed in the right canvas.
