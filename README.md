@@ -13,6 +13,7 @@ Install the following dependencies in the same environment you created then exec
 ```
 # Modern layout for tkinter
 pip install customtkinter
+pip install numpy
 ```
 
 ## Main GUI
