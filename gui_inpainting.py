@@ -205,7 +205,7 @@ class App(customtkinter.CTkFrame):
                 prog_text = re.findall(r"\d{1,3}(?=%)", output)
                 prog = int(prog_text[-1])
                 self.prog_bar.set(prog / 100)
-                it_text = re.findall(r"\d\.\d{1,2}s/it|\d\.\d{1,2}its/s", output)
+                it_text = re.findall(r"\d\.\d{1,2}s/it|\d\.\d{1,2}it/s", output)
                 it = it_text[-1]
                 self.speed_var.set(it)
             except:
