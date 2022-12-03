@@ -1,22 +1,22 @@
 import shutil
 from PIL import Image, ImageDraw, ImageFont
 import os
-import torch
+import numpy as np  # need to be installed
+import random
 
 
 def render(values, pipe, width, height):
     # Generate seed
-    generator = torch.Generator()
     if values["Seed"] == "-1":
-        seed = generator.seed()
+        seed = int(values["Seed"]) & np.iinfo(np.uint32).max
     else:
-        seed = int(values["Seed"])
-    generator = generator.manual_seed(seed)
-    latents = torch.randn((1, 4, height // 8, width // 8), generator=generator)
+        rng = np.random.default_rng()
+        seed = rng.integers(np.iinfo(np.uint32).max)
+
+    rng = np.random.RandomState(seed)
 
     image = pipe(values["Prompt"], height, width, int(values["Inference steps"]), float(values["Guidance scale"]),
-                 values["Neg prompt"], float(values["ETA"]), latents=latents,
-                 execution_provider="DmlExecutionProvider").images[0]
+                 values["Neg prompt"], generator=rng).images[0]
 
     if values["temp_name"] == "":
         image.save(f"{values['Output']}_{seed}.png")
@@ -47,17 +47,14 @@ def explore(values, pipe, width, height):
 
     # Generate the 4 images with random seeds
     for x in range(4):
-        generator = torch.Generator()
-        seed = generator.seed()
+        rng = np.random.default_rng()
+        seed = rng.integers(np.iinfo(np.uint32).max)
         seeds.append(seed)
-        generator = generator.manual_seed(seed)
-        latents = torch.randn((1, 4, height // 8, width // 8), generator=generator)
+        rng = np.random.RandomState(seed)
 
         image = pipe(values["Prompt"], height, width, int(values["Inference steps"]), float(values["Guidance scale"]),
-                     values["Neg prompt"], float(values["ETA"]), latents=latents,
-                     execution_provider="DmlExecutionProvider").images[0]
+                     values["Neg prompt"], generator=rng).images[0]
         image.save(f"images/temp/image{x}.png")
-        image = None
 
         # Add generated image
         gen_image = Image.open(f"images/temp/image{x}.png")
@@ -114,9 +111,3 @@ def merge_variations(images, varia1, varia2, name):
 
     # Save final image
     composite.save(name)
-
-
-def inpainting(values, pipe):
-    image = pipe(prompt=values["Prompt"], image=Image.open(values["Image"]), mask_image=Image.open("images/mask.png"),
-                 guidance_scale=values["Guidance scale"]).images[0]
-    image.save(f"{values['Output']}.png")
