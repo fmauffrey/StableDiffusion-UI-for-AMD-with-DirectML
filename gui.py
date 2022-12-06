@@ -1,88 +1,480 @@
 # mode.py must be present in the same folder
 
-import os.path
-from tkinter import *
-from tkinter.ttk import *
 import tkinter as tk
 from diffusers import OnnxStableDiffusionPipeline
-from modes import render, explore, merge_variations
 import threading
 import shutil
 import os
+import sys
+import io
+import re
+import time
+import customtkinter  # need to be installed
+import numpy as np  # need to be installed
+from PIL import Image, ImageDraw, ImageFont
+from diffusers import (DDPMScheduler, DDIMScheduler, PNDMScheduler, LMSDiscreteScheduler, EulerDiscreteScheduler,
+                       EulerAncestralDiscreteScheduler, DPMSolverMultistepScheduler)
 
 
-def start_thread(mode):
-    # Disable generate buttons
-    gen_button_r["state"] = "disabled"
-    gen_button_e["state"] = "disabled"
-    gen_button_v["state"] = "disabled"
-    t = threading.Thread(target=generate, args=[mode])
-    t.start()
+class App(customtkinter.CTkFrame):
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
+        # Check if output folder exists, if not create it
+        if not os.path.exists("images"):
+            os.mkdir("images")
+            os.mkdir("images/render")
+            os.mkdir("images/explore")
+            os.mkdir("images/variations")
 
-def generate(mode):
-    if mode == "render":
-        # Get values
-        values = {"Prompt": prompt_text_r.get(1.0, "end-1c"),
-                  "Neg prompt": neg_text_r.get(1.0, "end-1c"),
-                  "Inference steps": inf_var_r.get(),
-                  "Guidance scale": guidance_var_r.get(),
-                  "ETA": eta_var_r.get(),
-                  "Seed": seed_text_r.get(),
-                  "Output": f"images/render/{output_text_e.get().replace(' ', '_')}",
-                  "temp_name": ""}
+        # Pipe and scheduler variables
+        self.scheduler = None
+        self.pipe = None
 
-        # Start generation script
-        generated_seed = render(values=values, pipe=pipe, width=512, height=512)
+        # Graphical parameters
+        customtkinter.set_appearance_mode("dark")  # Modes: system (default), light, dark
+        customtkinter.set_default_color_theme("dark-blue")  # Themes: blue (default), dark-blue, green
+        title_size = 15
+        text_size = 12
 
-        # Display generated image
-        new_image = PhotoImage(file=f"{values['Output']}_{generated_seed}.png")
-        canvas_render.create_image(0, 0, anchor=NW, image=new_image)
+        # Redirecting output to variable
+        self.temp_out = io.StringIO()
+        sys.stderr = self.temp_out
 
-    elif mode == "explore":
-        # Get values
-        values = {"Prompt": prompt_text_e.get(1.0, "end-1c"),
-                  "Neg prompt": neg_text_e.get(1.0, "end-1c"),
-                  "Inference steps": inf_var_e.get(),
-                  "Guidance scale": guidance_var_e.get(),
-                  "ETA": eta_var_e.get(),
-                  "Output": output_text_e.get().replace(" ", "_")}
+        # Main window
+        parent.title("Stable UI")
+        parent.geometry('1600x650')
+        parent.resizable(False, False)
 
-        # Start generation script
-        seeds = explore(values=values, pipe=pipe, width=512, height=512)
+        # Frames
+        self.frame_scheduler_1 = customtkinter.CTkFrame(parent, width=800, height=50, corner_radius=0)
+        self.frame_scheduler_1.pack_propagate(False)
+        self.frame_scheduler_2 = customtkinter.CTkFrame(parent, width=800, height=50, corner_radius=0)
+        self.frame_scheduler_2.pack_propagate(False)
+        self.frame_mode = customtkinter.CTkFrame(parent, width=800, height=50, corner_radius=0)
+        self.frame_mode.pack_propagate(False)
+        self.frame_params = customtkinter.CTkFrame(parent, width=800, height=300, corner_radius=10)
+        self.frame_params.grid_propagate(False)
+        self.frame_scheduler_1.place(x=20, y=50)
+        self.frame_scheduler_2.place(x=20, y=100)
+        self.frame_mode.place(x=20, y=200)
+        self.frame_params.place(x=20, y=310)
 
-        # Display generated image and corresponding seeds
-        new_image = PhotoImage(file=f"images/explore/{values['Output']}_{seeds[0]}.png")
-        smaller_image = new_image.subsample(2, 2)
-        canvas_explore.create_image(0, 0, anchor=NW, image=smaller_image)
+        # Scheduler options
+        self.scheduler_label = customtkinter.CTkLabel(self, text="Scheduler", text_font=("Arial", title_size))
+        self.scheduler_label.text_label.place(relx=0, rely=0.5, anchor="w")
+        self.scheduler_var = tk.StringVar()
+        self.scheduler_button_1 = customtkinter.CTkRadioButton(self.frame_scheduler_1, text="DDPMScheduler",
+                                                               variable=self.scheduler_var,
+                                                               value="DDPMScheduler", command=self.scheduler_choice,
+                                                               text_font=("Arial", text_size))
+        self.scheduler_button_2 = customtkinter.CTkRadioButton(self.frame_scheduler_1, text="DDIMScheduler",
+                                                               variable=self.scheduler_var,
+                                                               value="DDIMScheduler", command=self.scheduler_choice,
+                                                               text_font=("Arial", text_size))
+        self.scheduler_button_3 = customtkinter.CTkRadioButton(self.frame_scheduler_1, text="PNDMScheduler",
+                                                               variable=self.scheduler_var,
+                                                               value="PNDMScheduler", command=self.scheduler_choice,
+                                                               text_font=("Arial", text_size))
+        self.scheduler_button_4 = customtkinter.CTkRadioButton(self.frame_scheduler_1, text="LMSDiscreteScheduler",
+                                                               variable=self.scheduler_var,
+                                                               value="LMSDiscreteScheduler",
+                                                               command=self.scheduler_choice,
+                                                               text_font=("Arial", text_size))
+        self.scheduler_button_5 = customtkinter.CTkRadioButton(self.frame_scheduler_2, text="EulerDiscreteScheduler",
+                                                               variable=self.scheduler_var,
+                                                               value="EulerDiscreteScheduler",
+                                                               command=self.scheduler_choice,
+                                                               text_font=("Arial", text_size))
+        self.scheduler_button_6 = customtkinter.CTkRadioButton(self.frame_scheduler_2,
+                                                               text="EulerAncestralDiscreteScheduler",
+                                                               variable=self.scheduler_var,
+                                                               value="EulerAncestralDiscreteScheduler",
+                                                               command=self.scheduler_choice,
+                                                               text_font=("Arial", text_size))
+        self.scheduler_button_7 = customtkinter.CTkRadioButton(self.frame_scheduler_2,
+                                                               text="DPMSolverMultistepScheduler",
+                                                               variable=self.scheduler_var,
+                                                               value="DPMSolverMultistepScheduler",
+                                                               command=self.scheduler_choice,
+                                                               text_font=("Arial", text_size))
+        self.scheduler_label.place(x=20, y=20)
+        for x in [self.scheduler_button_1, self.scheduler_button_2, self.scheduler_button_3, self.scheduler_button_4,
+                  self.scheduler_button_5,
+                  self.scheduler_button_6, self.scheduler_button_7]:
+            x.pack(expand=True, padx=10, pady=10, side="left", anchor="w")
 
-        # delete previous seed if any
-        text_seed1.delete(0, "end")
-        text_seed2.delete(0, "end")
-        text_seed3.delete(0, "end")
-        text_seed4.delete(0, "end")
+        # Mode options
+        self.mode_label = customtkinter.CTkLabel(self, text="Mode", text_font=("Arial", title_size))
+        self.mode_label.text_label.place(relx=0, rely=0.5, anchor="w")
+        self.mode_var = tk.StringVar()
+        self.render_button = customtkinter.CTkRadioButton(self.frame_mode, text="Render", variable=self.mode_var,
+                                                          value="Render",
+                                                          text_font=("Arial", text_size), command=self.mode_changer)
+        self.explore_button = customtkinter.CTkRadioButton(self.frame_mode, text="Explore", variable=self.mode_var,
+                                                           value="Explore",
+                                                           text_font=("Arial", text_size), command=self.mode_changer)
+        self.variations_button = customtkinter.CTkRadioButton(self.frame_mode, text="Variations",
+                                                              variable=self.mode_var,
+                                                              value="Variations", text_font=("Arial", text_size),
+                                                              command=self.mode_changer)
+        self.mode_label.place(x=20, y=170)
+        for x in [self.render_button, self.explore_button, self.variations_button]:
+            x.pack(expand=True, padx=10, pady=10, side="left", anchor="w")
 
-        # add new seeds
-        text_seed1.insert(0, seeds[0])
-        text_seed2.insert(0, seeds[1])
-        text_seed3.insert(0, seeds[2])
-        text_seed4.insert(0, seeds[3])
+        # Parameters title
+        self.param_title = customtkinter.CTkLabel(self, text="Parameters", text_font=("Arial", title_size))
+        self.param_title.text_label.place(relx=0, rely=0.5, anchor="w")
+        self.param_title.place(x=20, y=280)
 
-    elif mode == "variations":
-        # Get values
-        values = {"Prompt": prompt_text_v.get(1.0, "end-1c"),
-                  "Neg prompt": neg_text_v.get(1.0, "end-1c"),
-                  "Inference steps": inf_var_v.get(),
-                  "Guidance scale": guidance_var_v.get(),
-                  "ETA": eta_var_v.get(),
-                  "Seed": seed_text_v.get(),
-                  "Output": f"images/variations/{output_text_v.get().replace(' ', '_')}",
-                  "temp_name": ""}
+        # Prompt
+        self.prompt_label = customtkinter.CTkLabel(self.frame_params, text="Prompt", text_font=("Arial", title_size))
+        self.prompt_label.text_label.place(relx=0, rely=0.5, anchor="w")
+        self.prompt_text = customtkinter.CTkTextbox(self.frame_params, width=350, height=100)
+        self.prompt_label.place(x=25, y=10)
+        self.prompt_text.place(x=25, y=40)
 
-        values_varia1 = varia1_text.get().split(",")
-        param_varia1 = varia1_box.get()
-        values_varia2 = varia2_text.get().split(",")
-        param_varia2 = varia2_box.get()
+        # Negative prompt
+        self.neg_label = customtkinter.CTkLabel(self.frame_params, text="Negative Prompt",
+                                                text_font=("Arial", title_size),
+                                                width=200)
+        self.neg_label.text_label.place(relx=0, rely=0.5, anchor="w")
+        self.neg_text = customtkinter.CTkTextbox(self.frame_params, width=350, height=100)
+        self.neg_label.place(x=425, y=10)
+        self.neg_text.place(x=425, y=40)
+
+        # Inference steps
+        self.inf_label = customtkinter.CTkLabel(self.frame_params, text="Inference steps",
+                                                text_font=("Arial", title_size))
+        self.inf_label.text_label.place(relx=0, rely=0.5, anchor="w")
+        self.inf_var = tk.IntVar()
+        self.inf_var.set(50)
+        self.inf_scale = customtkinter.CTkSlider(self.frame_params, variable=self.inf_var, from_=1, to=100,
+                                                 number_of_steps=99,
+                                                 width=150,
+                                                 command=self.slider_event_inference)
+        self.inf_scale.set(50)
+        self.inf_counter_var = tk.StringVar(value="50.0")
+        self.inf_counter = customtkinter.CTkLabel(self.frame_params, textvariable=self.inf_counter_var,
+                                                  text_font=("Arial", 15),
+                                                  width=50)
+        self.inf_label.place(x=25, y=150)
+        self.inf_scale.place(x=175, y=157)
+        self.inf_counter.place(x=330, y=150)
+
+        # Guidance scale
+        self.guidance_label = customtkinter.CTkLabel(self.frame_params, text="Guidance scale",
+                                                     text_font=("Arial", title_size))
+        self.guidance_label.text_label.grid(row=0, column=0)
+        self.guidance_var = tk.DoubleVar()
+        self.guidance_var.set(12)
+        self.guidance_scale = customtkinter.CTkSlider(self.frame_params, variable=self.guidance_var, from_=1, to=20,
+                                                      number_of_steps=38,
+                                                      width=150, command=self.slider_event_guidance)
+        self.guidance_scale.set(12)
+        self.guidance_counter_var = tk.StringVar(value="12.0")
+        self.guidance_counter = customtkinter.CTkLabel(self.frame_params, textvariable=self.guidance_counter_var,
+                                                       text_font=("Arial", 15),
+                                                       width=50)
+        self.guidance_label.place(x=25, y=180)
+        self.guidance_scale.place(x=175, y=187)
+        self.guidance_counter.place(x=330, y=180)
+
+        # Seed
+        self.seed_label = customtkinter.CTkLabel(self.frame_params, text="Seed", text_font=("Arial", title_size))
+        self.seed_label.text_label.place(relx=0, rely=0.5, anchor="w")
+        self.seed_text = customtkinter.CTkEntry(self.frame_params, width=180)
+        self.seed_text.insert(0, "-1")
+        self.seed_label.place(x=25, y=210)
+        self.seed_text.place(x=175, y=210)
+
+        # Output file
+        self.output_label = customtkinter.CTkLabel(self.frame_params, text="Image name",
+                                                   text_font=("Arial", title_size))
+        self.output_label.text_label.place(relx=0, rely=0.5, anchor="w")
+        self.output_text = customtkinter.CTkEntry(self.frame_params, width=180)
+        self.output_text.insert(0, "example")
+        self.output_label.place(x=425, y=150)
+        self.output_text.place(x=585, y=150)
+
+        # Variation 1
+        self.varia1_var = customtkinter.StringVar(value="Prompt")
+        self.varia1_box = customtkinter.CTkComboBox(self.frame_params, state="readonly",
+                                                    values=["Prompt", "Neg prompt", "Inference steps",
+                                                            "Guidance scale"],
+                                                    variable=self.varia1_var)
+        self.varia1_box.entry.configure(readonlybackground="#3d3d3d")
+        self.varia1_text = customtkinter.CTkEntry(self.frame_params, width=180)
+        self.varia1_box.place(x=425, y=180)
+        self.varia1_text.place(x=585, y=180)
+
+        # Variation 2
+        self.varia2_var = customtkinter.StringVar(value="Guidance scale")
+        self.varia2_box = customtkinter.CTkComboBox(self.frame_params, state="readonly",
+                                                    values=["Prompt", "Neg prompt", "Inference steps",
+                                                            "Guidance scale"],
+                                                    variable=self.varia2_var)
+        self.varia2_box.entry.configure(readonlybackground="#3d3d3d")
+        self.varia2_text = customtkinter.CTkEntry(self.frame_params, width=180)
+        self.varia2_box.place(x=425, y=210)
+        self.varia2_text.place(x=585, y=210)
+
+        # Generate
+        self.gen_button = customtkinter.CTkButton(parent, text='Generate', command=self.start_thread,
+                                                  text_font=("Arial", 30, "bold"),
+                                                  width=200, height=70, state="disabled")
+        self.gen_button.place(x=840, y=300)
+
+        # Generation speed
+        self.speed_var = tk.StringVar()
+        self.speed_var.set("")
+        self.speed_label = customtkinter.CTkLabel(self, textvariable=self.speed_var, width=100, text_font=("Arial", 10))
+        self.speed_label.place(x=900, y=385)
+
+        # Progress bar
+        self.prog_bar = customtkinter.CTkProgressBar(master=parent, width=200)
+        self.prog_bar.set(0)
+        self.prog_bar.place(x=840, y=380)
+
+        # Canvas for image
+        self.canvas_out = tk.Canvas(parent, width=512, height=512, bg='white')
+        self.canvas_out.place(x=1063, y=69)
+
+        # Seed text box for explore mode
+        self.seed1_var = tk.StringVar()
+        self.seed2_var = tk.StringVar()
+        self.seed3_var = tk.StringVar()
+        self.seed4_var = tk.StringVar()
+        self.text_seed1 = customtkinter.CTkEntry(parent, width=100, textvariable=self.seed1_var)
+        self.text_seed2 = customtkinter.CTkEntry(parent, width=100, textvariable=self.seed2_var)
+        self.text_seed3 = customtkinter.CTkEntry(parent, width=100, textvariable=self.seed3_var)
+        self.text_seed4 = customtkinter.CTkEntry(parent, width=100, textvariable=self.seed4_var)
+
+        # Trigger the mode button when starting
+        self.render_button.invoke()
+
+    def scheduler_choice(self):
+        choice = self.scheduler_var.get()
+        model = "./stable_diffusion_onnx"
+        if choice == "DDPMScheduler":
+            self.scheduler = DDPMScheduler.from_pretrained(model, subfolder="scheduler")
+        elif choice == "DDIMScheduler":
+            self.scheduler = DDIMScheduler.from_pretrained(model, subfolder="scheduler")
+        elif choice == "PNDMScheduler":
+            self.scheduler = PNDMScheduler.from_pretrained(model, subfolder="scheduler")
+        elif choice == "LMSDiscreteScheduler":
+            self.scheduler = LMSDiscreteScheduler.from_pretrained(model, subfolder="scheduler")
+        elif choice == "EulerAncestralDiscreteScheduler":
+            self.scheduler = EulerAncestralDiscreteScheduler.from_pretrained(model, subfolder="scheduler")
+        elif choice == "EulerDiscreteScheduler":
+            self.scheduler = EulerDiscreteScheduler.from_pretrained(model, subfolder="scheduler")
+        elif choice == "DPMSolverMultistepScheduler":
+            self.scheduler = DPMSolverMultistepScheduler.from_pretrained(model, subfolder="scheduler")
+
+        # Load model
+        self.pipe = OnnxStableDiffusionPipeline.from_pretrained(model, revision="onnx", provider="DmlExecutionProvider",
+                                                                safety_checker=None, scheduler=self.scheduler)
+
+        # Enable generate
+        self.gen_button.configure(state="normal")
+
+    def slider_event_guidance(self, value):
+        self.guidance_counter_var.set(str(value))
+
+    def slider_event_inference(self, value):
+        self.inf_counter_var.set(str(value))
+
+    def mode_changer(self):
+        if self.mode_var.get() == "Render":
+            try:
+                self.text_seed1.place_forget()
+                self.text_seed2.place_forget()
+                self.text_seed3.place_forget()
+                self.text_seed4.place_forget()
+            except NameError:
+                pass
+            self.seed_text.configure(state="normal")
+            self.varia1_box.configure(state="disabled")
+            self.varia2_box.configure(state="disabled")
+            self.varia1_text.configure(state="disabled")
+            self.varia2_text.configure(state="disabled")
+
+        elif self.mode_var.get() == "Explore":
+            self.text_seed1.place(x=1141, y=30)
+            self.text_seed2.place(x=1397, y=30)
+            self.text_seed3.place(x=1141, y=590)
+            self.text_seed4.place(x=1397, y=590)
+            self.varia1_box.configure(state="disabled")
+            self.varia2_box.configure(state="disabled")
+            self.varia1_text.configure(state="disabled")
+            self.varia2_text.configure(state="disabled")
+            self.seed_text.configure(state="disabled")
+
+        elif self.mode_var.get() == "Variations":
+            try:
+                self.text_seed1.place_forget()
+                self.text_seed2.place_forget()
+                self.text_seed3.place_forget()
+                self.text_seed4.place_forget()
+            except NameError:
+                pass
+            self.varia1_box.configure(state="normal")
+            self.varia2_box.configure(state="normal")
+            self.varia1_text.configure(state="normal")
+            self.varia2_text.configure(state="normal")
+            self.seed_text.configure(state="normal")
+
+    def start_thread(self):
+        # Disable generate buttons
+        self.gen_button.configure(state="disabled")
+        t = threading.Thread(target=self.generate)
+        t.start()
+
+    def stdout_listening(self):
+        prog = 0
+        while prog < 100:
+            output = self.temp_out.getvalue()
+            try:
+                # Get % of progress from output
+                prog_text = re.findall(r"\d{1,3}(?=%)", output)
+                prog = int(prog_text[-1])
+                self.prog_bar.set(prog / 100)
+                it_text = re.findall(r"\d\.\d{1,2}s/it|\d\.\d{1,2}it/s", output)
+                it = it_text[-1]
+                self.speed_var.set(it)
+            except:
+                pass
+            time.sleep(0.5)
+
+        # Reinitialize speed variable
+        self.speed_var.set("")
+
+    def generate(self):
+        mode = self.mode_var.get()
+        if mode == "Render":
+            # Get values
+            values = {"Prompt": self.prompt_text.textbox.get("0.0", "end"),
+                      "Neg prompt": self.neg_text.textbox.get("0.0", "end"),
+                      "Inference steps": self.inf_var.get(),
+                      "Guidance scale": self.guidance_var.get(),
+                      "Seed": self.seed_text.get(),
+                      "Output": f"images/render/{self.output_text.get().replace(' ', '_')}",
+                      "temp_name": ""}
+
+            # Start generation script
+            generated_seed = self.render(values=values, pipe=self.pipe, width=512, height=512)
+
+            # Display generated image
+            new_image = tk.PhotoImage(file=f"{values['Output']}_{generated_seed}.png")
+            self.canvas_out.create_image(0, 0, anchor="nw", image=new_image)
+
+        elif mode == "Explore":
+            # Get values
+            values = {"Prompt": self.prompt_text.textbox.get("0.0", "end"),
+                      "Neg prompt": self.neg_text.textbox.get("0.0", "end"),
+                      "Inference steps": self.inf_var.get(),
+                      "Guidance scale": self.guidance_var.get(),
+                      "Output": self.output_text.get().replace(" ", "_")}
+
+            # Start generation script
+            self.explore(values=values, pipe=self.pipe, width=512, height=512)
+
+        elif mode == "Variations":
+            # Recreate temporary sdterr
+            self.temp_out = io.StringIO()
+            sys.stderr = self.temp_out
+
+            # Get values
+            values = {"Prompt": self.prompt_text.textbox.get("0.0", "end"),
+                      "Neg prompt": self.neg_text.textbox.get("0.0", "end"),
+                      "Inference steps": self.inf_var.get(),
+                      "Guidance scale": self.guidance_var.get(),
+                      "Seed": self.seed_text.get(),
+                      "Output": f"images/variations/{self.output_text.get().replace(' ', '_')}",
+                      "temp_name": ""}
+
+            values_varia1 = self.varia1_text.get().split(",")
+            param_varia1 = self.varia1_box.get()
+            values_varia2 = self.varia2_text.get().split(",")
+            param_varia2 = self.varia2_box.get()
+
+            if not os.path.exists("images/temp"):
+                os.mkdir("images/temp")
+            else:
+                shutil.rmtree("images/temp")
+                os.mkdir("images/temp")
+
+            images_list = []  # All images names, in order of generation
+            generated_seed = ""
+            render_values = values.copy()  # Dict use to run each render with modified info
+
+            # Double loop over the 2 variation parameters to generate all possible images
+            for x in values_varia1:
+                if param_varia1 in ["Prompt", "Neg prompt"]:
+                    render_values[param_varia1] = values[param_varia1].replace("REPLACE", x)
+                else:
+                    render_values[param_varia1] = x
+                for y in values_varia2:
+                    if param_varia2 in ["Prompt", "Neg prompt"]:
+                        render_values[param_varia2] = values[param_varia2].replace("REPLACE", x)
+                    else:
+                        render_values[param_varia2] = y
+
+                    # Set temporary name and save it
+                    render_values["temp_name"] = f"images/temp/{x}_{y}.png"
+                    images_list.append(f"images/temp/{x}_{y}.png")
+
+                    # Start generation script
+                    generated_seed = self.render(values=render_values, pipe=self.pipe, width=512, height=512)
+
+            # Merge all generated images into one composite image
+            self.merge_variations(images=images_list, varia1=values_varia1, varia2=values_varia2,
+                                  name=f"{values['Output']}_{generated_seed}.png")
+
+            # Display generated image
+            new_image = tk.PhotoImage(file=f"{values['Output']}_{generated_seed}.png")
+            dezoom = len(values_varia1) if len(values_varia1) > len(values_varia2) else len(values_varia2)
+            smaller_image = new_image.subsample(dezoom + 1, dezoom + 1)
+            self.canvas_out.create_image(0, 0, anchor="nw", image=smaller_image)
+
+            shutil.rmtree("images/temp")
+
+        # Reactivate generate buttons
+        self.gen_button.configure(state="normal")
+
+    def render(self, values, pipe, width, height):
+        # Recreate temporary sdterr and start listening
+        self.temp_out = io.StringIO()
+        sys.stderr = self.temp_out
+        l = threading.Thread(target=self.stdout_listening)
+        l.start()
+
+        # Generate seed
+        if values["Seed"] == "-1":
+            rng = np.random.default_rng()
+            seed = rng.integers(np.iinfo(np.uint32).max)
+        else:
+            seed = values["Seed"]
+
+        rng = np.random.RandomState(int(seed))
+
+        image = pipe(values["Prompt"], height, width, int(values["Inference steps"]), float(values["Guidance scale"]),
+                     values["Neg prompt"], generator=rng).images[0]
+
+        if values["temp_name"] == "":
+            image.save(f"{values['Output']}_{seed}.png")
+            with open(f"{values['Output']}_{seed}_parameters.txt", "w") as output:
+                output.write(f"{values['Output']} ({width}x{height}) Seed {seed}\n"
+                             f"Prompt = {values['Prompt']}\n"
+                             f"Negative prompt = {values['Neg prompt']}\n"
+                             f"Inference steps = {values['Inference steps']}\n"
+                             f"Guidance scale = {values['Guidance scale']}\n")
+        else:
+            image.save(f"{values['temp_name']}")
+
+        return seed
+
+    def explore(self, values, pipe, width, height):
 
         if not os.path.exists("images/temp"):
             os.mkdir("images/temp")
@@ -90,308 +482,100 @@ def generate(mode):
             shutil.rmtree("images/temp")
             os.mkdir("images/temp")
 
-        images_list = []  # All images names, in order of generation
-        generated_seed = ""
-        render_values = values.copy()  # Dict use to run each render with modified info
+        seeds = []
+        composite = Image.new(mode="RGB", size=(1024, 1024))  # Final composition of generated images
+        positions = [(0, 0), (512, 0), (0, 512), (512, 512)]  # Anchor positions in the composite image
 
-        # Double loop over the 2 variation parameters to generate all possible images
-        for x in values_varia1:
-            if param_varia1 in ["Prompt", "Neg prompt"]:
-                render_values[param_varia1] = values[param_varia1].replace("REPLACE", x)
-            else:
-                render_values[param_varia1] = x
-            for y in values_varia2:
-                if param_varia2 in ["Prompt", "Neg prompt"]:
-                    render_values[param_varia2] = values[param_varia2].replace("REPLACE", x)
-                else:
-                    render_values[param_varia2] = y
+        # Generate the 4 images with random seeds
+        for x in range(4):
+            # Recreate temporary sdterr and start listening
+            self.temp_out = io.StringIO()
+            sys.stderr = self.temp_out
+            l = threading.Thread(target=self.stdout_listening)
+            l.start()
 
-                # Set temporary name and save it
-                render_values["temp_name"] = f"images/temp/{x}_{y}.png"
-                images_list.append(f"images/temp/{x}_{y}.png")
+            # Generate random seed
+            rng = np.random.default_rng()
+            seed = rng.integers(np.iinfo(np.uint32).max)
+            seeds.append(seed)
+            rng = np.random.RandomState(int(seed))
 
-                # Start generation script
-                generated_seed = render(values=render_values, pipe=pipe, width=512, height=512)
+            # Generate image
+            image = pipe(values["Prompt"], height, width, int(values["Inference steps"]),
+                         float(values["Guidance scale"]), values["Neg prompt"], generator=rng).images[0]
+            image.save(f"images/temp/image{x}.png")
 
-        # Merge all generated images into one composite image
-        merge_variations(images=images_list, varia1=values_varia1, varia2=values_varia2,
-                         name=f"{values['Output']}_{generated_seed}.png")
+            # Add generated image
+            gen_image = Image.open(f"images/temp/image{x}.png")
+            composite.paste(gen_image, positions[x])
+            composite.save("images/temp/composite_temp.png")
 
-        # Display generated image
-        new_image = PhotoImage(file=f"{values['Output']}_{generated_seed}.png")
-        dezoom = len(values_varia1) if len(values_varia1) > len(values_varia2) else len(values_varia2)
-        smaller_image = new_image.subsample(len(values_varia1)+1, len(values_varia2)+1)
-        canvas_variations.create_image(0, 0, anchor=NW, image=smaller_image)
-
+        # Save final composite image
+        composite.save(f"images/explore/{values['Output']}_{seeds[0]}.png")
         shutil.rmtree("images/temp")
+        seeds = [str(x) for x in seeds]
 
-    # Reactivate generate buttons
-    gen_button_r["state"] = "normal"
-    gen_button_e["state"] = "normal"
-    gen_button_v["state"] = "normal"
+        # Display generated image and corresponding seeds
+        new_image = tk.PhotoImage(file=f"images/explore/{values['Output']}_{seeds[0]}.png")
+        smaller_image = new_image.subsample(2, 2)
+        self.canvas_out.create_image(0, 0, anchor="nw", image=smaller_image)
+
+        # Display seeds
+        self.seed1_var.set(seeds[0])
+        self.seed2_var.set(seeds[1])
+        self.seed3_var.set(seeds[2])
+        self.seed4_var.set(seeds[3])
+
+        # Save parameters
+        with open(f"images/explore/{values['Output']}_{seeds[0]}_parameters.txt", "w") as output:
+            output.write(f"{values['Output']} ({width}x{height}) Seeds {' '.join(seeds)}\n"
+                         f"Prompt = {values['Prompt']}\n"
+                         f"Negative prompt = {values['Neg prompt']}\n"
+                         f"Inference steps = {values['Inference steps']}\n"
+                         f"Guidance scale = {values['Guidance scale']}\n")
+
+        return seeds
+
+    def merge_variations(self, images, varia1, varia2, name):
+        # Create composition image depending on the number of images generated
+        size_var1, size_var2 = len(varia1) + 1, len(varia2) + 1  # +1 for title space
+        composite = Image.new(mode="RGB", size=(512 * size_var2, 512 * size_var1),
+                              color="white")  # Final composition of generated images
+        font = ImageFont.truetype(font="arial.ttf", size=65)
+
+        # First column -> names of varia1
+        for y in range(1, size_var1):
+            position = 512 * y
+            text = varia1[y - 1]
+            img = Image.new(mode="RGB", size=(512, 512), color="white")
+            draw = ImageDraw.Draw(img)
+            w, h = draw.textsize(text)
+            draw.text((0, (512 - h) / 2), text=text, fill='black', font=font)  # center text
+            composite.paste(img, (0, position))
+
+        # First row -> names of varia2
+        for x in range(1, size_var2):
+            position = 512 * x
+            text = varia2[x - 1]
+            img = Image.new(mode="RGB", size=(512, 512), color="white")
+            draw = ImageDraw.Draw(img)
+            w, h = draw.textsize(text)
+            draw.text(((512 - w) / 2, (512 - h) / 2), text=text, fill='black', font=font)  # center text
+            composite.paste(img, (position, 0))
+
+        # Add the image from left to right (x) and from top to bottom (y)
+        counter = 0
+        for y in [512 * x for x in range(1, size_var1)]:
+            for x in [512 * x for x in range(1, size_var2)]:
+                img = Image.open(images[counter])
+                composite.paste(img, (x, y))
+                counter += 1
+
+        # Save final image
+        composite.save(name)
 
 
 if __name__ == "__main__":
-    # Check if output folder exists, if not create it
-    if not os.path.exists("images"):
-        os.mkdir("images")
-        os.mkdir("images/render")
-        os.mkdir("images/explore")
-        os.mkdir("images/variations")
-
-    # Load model
-    pipe = OnnxStableDiffusionPipeline.from_pretrained("./stable_diffusion_onnx", provider="DmlExecutionProvider")
-
-    # Main window
-    root = Tk()
-    root.title("Stable UI")
-    root.geometry('1200x600')
-    root.resizable(False, False)
-
-    # Tabs creation
-    tabControl = Notebook(root)
-    tab_render = Frame(tabControl)
-    tab_explore = Frame(tabControl)
-    tab_variations = Frame(tabControl)
-    tabControl.add(tab_render, text='Render')
-    tabControl.add(tab_explore, text='Explore')
-    tabControl.add(tab_variations, text='Variations')
-    tabControl.pack(expand=1, fill="both")
-
-    ## Render tab widgets ##
-    # Create frames
-    render_param_frame = Frame(tab_render)
-    render_image_frame = Frame(tab_render, padding=(30, 0))
-    render_param_frame.pack(side=LEFT)
-    render_image_frame.pack(side=RIGHT)
-
-    # Prompt
-    prompt_label_r = Label(render_param_frame, text="Prompt", font=("Comic Sans MS", 15))
-    prompt_text_r = Text(render_param_frame, width=60, height=5)
-    prompt_label_r.grid(column=0, row=1, sticky="W")
-    prompt_text_r.grid(column=0, row=2, columnspan=3)
-
-    # Negative prompt
-    neg_label_r = Label(render_param_frame, text="Negative Prompt", font=("Comic Sans MS", 15))
-    neg_text_r = Text(render_param_frame, width=60, height=5)
-    neg_label_r.grid(column=0, row=3, sticky="W")
-    neg_text_r.grid(column=0, row=4, columnspan=3)
-
-    # Inference steps
-    inf_var_r = IntVar()
-    inf_var_r.set(50)
-    inf_label_r = Label(render_param_frame, text="Inference steps", font=("Comic Sans MS", 15))
-    inf_scale_r = tk.Scale(render_param_frame, variable=inf_var_r, from_=1, to=100, orient=HORIZONTAL, resolution=1,
-                           length=300)
-    inf_label_r.grid(column=0, row=5, sticky="W")
-    inf_scale_r.grid(column=1, row=5, columnspan=2, sticky="W")
-
-    # Guidance scale
-    guidance_var_r = DoubleVar()
-    guidance_var_r.set(7.5)
-    guidance_label_r = Label(render_param_frame, text="Guidance scale", font=("Comic Sans MS", 15))
-    guidance_scale_r = tk.Scale(render_param_frame, variable=guidance_var_r, from_=1, to=20, orient=HORIZONTAL,
-                                resolution=0.5,
-                                length=300)
-    guidance_label_r.grid(column=0, row=6, sticky="W")
-    guidance_scale_r.grid(column=1, row=6, columnspan=2, sticky="W")
-
-    # ETA
-    eta_var_r = DoubleVar()
-    eta_label_r = Label(render_param_frame, text="ETA (noise)", font=("Comic Sans MS", 15))
-    eta_scale_r = tk.Scale(render_param_frame, variable=eta_var_r, from_=0, to=1, orient=HORIZONTAL, resolution=0.05,
-                           length=300)
-    eta_label_r.grid(column=0, row=7, sticky="W")
-    eta_scale_r.grid(column=1, row=7, columnspan=2, sticky="W")
-
-    # Seed
-    seed_bg_r = StringVar()
-    seed_label_r = Label(render_param_frame, text="Seed", font=("Comic Sans MS", 15))
-    seed_text_r = Entry(render_param_frame, width=30)
-    seed_text_r.insert(0, "-1")
-    seed_label_r.grid(column=0, row=8, sticky="W")
-    seed_text_r.grid(column=1, row=8, sticky="W")
-
-    # Output file
-    output_label_r = Label(render_param_frame, text="Image name", font=("Comic Sans MS", 15))
-    output_text_r = Entry(render_param_frame, width=30)
-    output_text_r.insert(0, "example")
-    output_label_r.grid(column=0, row=9, sticky="W")
-    output_text_r.grid(column=1, row=9, sticky="W")
-
-    # Generate
-    gen_button_r = tk.Button(render_param_frame, text='Generate', command=lambda: start_thread("render"),
-                             font=("Comic Sans MS", 30, "bold"), width=15)
-    gen_button_r.grid(column=0, row=10, columnspan=3, pady=25)
-
-    # Canvas for image
-    canvas_render = Canvas(render_image_frame, width=512, height=512, bg='white')
-    canvas_render.pack()
-
-    #############################################################
-
-    ## Explore tab widgets ##
-    # Create frames
-    explore_param_frame = Frame(tab_explore)
-    explore_image_frame = Frame(tab_explore, padding=(30, 0))
-    explore_param_frame.pack(side=LEFT)
-    explore_image_frame.pack(side=RIGHT)
-
-    # Prompt
-    prompt_label_e = Label(explore_param_frame, text="Prompt", font=("Comic Sans MS", 15))
-    prompt_text_e = Text(explore_param_frame, width=60, height=5)
-    prompt_label_e.grid(column=0, row=1, sticky="W")
-    prompt_text_e.grid(column=0, row=2, columnspan=3)
-
-    # Negative prompt
-    neg_label_e = Label(explore_param_frame, text="Negative Prompt", font=("Comic Sans MS", 15))
-    neg_text_e = Text(explore_param_frame, width=60, height=5)
-    neg_label_e.grid(column=0, row=3, sticky="W")
-    neg_text_e.grid(column=0, row=4, columnspan=3)
-
-    # Inference steps
-    inf_var_e = IntVar()
-    inf_var_e.set(20)
-    inf_label_e = Label(explore_param_frame, text="Inference steps", font=("Comic Sans MS", 15))
-    inf_scale_e = tk.Scale(explore_param_frame, variable=inf_var_e, from_=1, to=100, orient=HORIZONTAL, resolution=1,
-                           length=300)
-    inf_label_e.grid(column=0, row=5, sticky="W")
-    inf_scale_e.grid(column=1, row=5, columnspan=2, sticky="W")
-
-    # Guidance scale
-    guidance_var_e = DoubleVar()
-    guidance_var_e.set(7.5)
-    guidance_label_e = Label(explore_param_frame, text="Guidance scale", font=("Comic Sans MS", 15))
-    guidance_scale_e = tk.Scale(explore_param_frame, variable=guidance_var_e, from_=1, to=20, orient=HORIZONTAL,
-                                resolution=0.5,
-                                length=300)
-    guidance_label_e.grid(column=0, row=6, sticky="W")
-    guidance_scale_e.grid(column=1, row=6, columnspan=2, sticky="W")
-
-    # ETA
-    eta_var_e = DoubleVar()
-    eta_label_e = Label(explore_param_frame, text="ETA (noise)", font=("Comic Sans MS", 15))
-    eta_scale_e = tk.Scale(explore_param_frame, variable=eta_var_e, from_=0, to=1, orient=HORIZONTAL, resolution=0.05,
-                           length=300)
-    eta_label_e.grid(column=0, row=7, sticky="W")
-    eta_scale_e.grid(column=1, row=7, columnspan=2, sticky="W")
-
-    # Seed
-    seed_bg_e = StringVar()
-    seed_label_e = Label(explore_param_frame, text="Seed", font=("Comic Sans MS", 15))
-    seed_text_e = Entry(explore_param_frame, width=30, background="grey", state="disabled")
-    seed_text_e.insert(0, "Four random seeds")
-    seed_label_e.grid(column=0, row=8, sticky="W")
-    seed_text_e.grid(column=1, row=8, sticky="W")
-
-    # Output file
-    output_label_e = Label(explore_param_frame, text="Image name", font=("Comic Sans MS", 15))
-    output_text_e = Entry(explore_param_frame, width=30)
-    output_text_e.insert(0, "example")
-    output_label_e.grid(column=0, row=9, sticky="W")
-    output_text_e.grid(column=1, row=9, sticky="W")
-
-    # Generate
-    gen_button_e = tk.Button(explore_param_frame, text='Generate', command=lambda: start_thread("explore"),
-                             font=("Comic Sans MS", 30, "bold"), width=15)
-    gen_button_e.grid(column=0, row=10, columnspan=3, pady=25)
-
-    # Canvas for image + text zones for seeds
-    text_seed1 = Entry(explore_image_frame)
-    text_seed2 = Entry(explore_image_frame)
-    text_seed3 = Entry(explore_image_frame)
-    text_seed4 = Entry(explore_image_frame)
-    canvas_explore = Canvas(explore_image_frame, width=512, height=512, bg='white')
-    text_seed1.grid(column=0, row=0)
-    text_seed2.grid(column=1, row=0)
-    text_seed3.grid(column=0, row=2)
-    text_seed4.grid(column=1, row=2)
-    canvas_explore.grid(column=0, row=1, columnspan=2)
-
-    ## Variations tab widgets ##
-    # Create Frames
-    variations_param_frame = Frame(tab_variations)
-    variations_image_frame = Frame(tab_variations, padding=(30, 0))
-    variations_param_frame.pack(side=LEFT)
-    variations_image_frame.pack(side=RIGHT)
-
-    # Prompt
-    prompt_label_v = Label(variations_param_frame, text="Prompt", font=("Comic Sans MS", 15))
-    prompt_text_v = Text(variations_param_frame, width=70, height=5)
-    prompt_label_v.grid(column=0, row=1, sticky="W")
-    prompt_text_v.grid(column=0, row=2, columnspan=3)
-
-    # Negative prompt
-    neg_label_v = Label(variations_param_frame, text="Negative Prompt", font=("Comic Sans MS", 15))
-    neg_text_v = Text(variations_param_frame, width=70, height=5)
-    neg_label_v.grid(column=0, row=3, sticky="W")
-    neg_text_v.grid(column=0, row=4, columnspan=3)
-
-    # Inference steps
-    inf_var_v = IntVar()
-    inf_var_v.set(20)
-    inf_label_v = Label(variations_param_frame, text="Inference steps", font=("Comic Sans MS", 15))
-    inf_scale_v = tk.Scale(variations_param_frame, variable=inf_var_v, from_=1, to=100, orient=HORIZONTAL, resolution=1,
-                           length=300)
-    inf_label_v.grid(column=0, row=5, sticky="W")
-    inf_scale_v.grid(column=1, row=5, columnspan=2, sticky="W")
-
-    # Guidance scale
-    guidance_var_v = DoubleVar()
-    guidance_var_v.set(7.5)
-    guidance_label_v = Label(variations_param_frame, text="Guidance scale", font=("Comic Sans MS", 15))
-    guidance_scale_v = tk.Scale(variations_param_frame, variable=guidance_var_v, from_=1, to=20, orient=HORIZONTAL,
-                                resolution=0.5, length=300)
-    guidance_label_v.grid(column=0, row=6, sticky="W")
-    guidance_scale_v.grid(column=1, row=6, columnspan=2, sticky="W")
-
-    # ETA
-    eta_var_v = DoubleVar()
-    eta_label_v = Label(variations_param_frame, text="ETA (noise)", font=("Comic Sans MS", 15))
-    eta_scale_v = tk.Scale(variations_param_frame, variable=eta_var_v, from_=0, to=1, orient=HORIZONTAL,
-                           resolution=0.05,
-                           length=300)
-    eta_label_v.grid(column=0, row=7, sticky="W")
-    eta_scale_v.grid(column=1, row=7, columnspan=2, sticky="W")
-
-    # Seed
-    seed_bg_v = StringVar()
-    seed_label_v = Label(variations_param_frame, text="Seed", font=("Comic Sans MS", 15))
-    seed_text_v = Entry(variations_param_frame, width=40, background="grey")
-    seed_text_v.insert(0, "-1")
-    seed_label_v.grid(column=0, row=8, sticky="W")
-    seed_text_v.grid(column=1, row=8, sticky="W")
-
-    # Output file
-    output_label_v = Label(variations_param_frame, text="Image name", font=("Comic Sans MS", 15))
-    output_text_v = Entry(variations_param_frame, width=40)
-    output_text_v.insert(0, "example")
-    output_label_v.grid(column=0, row=9, sticky="W")
-    output_text_v.grid(column=1, row=9, sticky="W")
-
-    # Variation 1
-    varia1_box = Combobox(variations_param_frame, state="readonly", values=["Prompt", "Neg prompt", "Inference steps",
-                                                                            "Guidance scale", "ETA"])
-    varia1_box.current(0)
-    varia1_text = Entry(variations_param_frame, width=40)
-    varia1_box.grid(column=0, row=10, sticky="SW", pady=5)
-    varia1_text.grid(column=1, row=10, columnspan=3, sticky="W")
-
-    # Variation 2
-    varia2_box = Combobox(variations_param_frame, state="readonly", values=["Prompt", "Neg prompt", "Inference steps",
-                                                                            "Guidance scale", "ETA"])
-    varia2_box.current(2)
-    varia2_text = Entry(variations_param_frame, width=40)
-    varia2_box.grid(column=0, row=11, sticky="W")
-    varia2_text.grid(column=1, row=11, columnspan=3, sticky="W")
-
-    # Generate
-    gen_button_v = tk.Button(variations_param_frame, text='Generate', command=lambda: start_thread("variations"),
-                             font=("Comic Sans MS", 30, "bold"), width=15)
-    gen_button_v.grid(column=0, row=12, columnspan=3, pady=25)
-
-    # Canvas for image
-    canvas_variations = Canvas(variations_image_frame, width=512, height=512, bg='white')
-    canvas_variations.pack()
-
+    root = customtkinter.CTk()
+    App(root).pack(side="top", fill="both", expand=True)
     root.mainloop()
