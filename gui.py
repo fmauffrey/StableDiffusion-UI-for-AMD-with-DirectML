@@ -1,5 +1,3 @@
-# mode.py must be present in the same folder
-
 import tkinter as tk
 from diffusers import OnnxStableDiffusionPipeline
 import threading
@@ -9,8 +7,8 @@ import sys
 import io
 import re
 import time
-import customtkinter  # need to be installed
-import numpy as np  # need to be installed
+import customtkinter
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from diffusers import (DDPMScheduler, DDIMScheduler, PNDMScheduler, LMSDiscreteScheduler, EulerDiscreteScheduler,
                        EulerAncestralDiscreteScheduler, DPMSolverMultistepScheduler)
