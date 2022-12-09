@@ -12,7 +12,7 @@ Some dependencies are required (see below).
 ## Dependencies
 Install the following dependencies in the same environment you created then execute:
 ```
-pip install customtkinter
+pip install customtkinter==4.6.3
 pip install numpy
 ```
 
