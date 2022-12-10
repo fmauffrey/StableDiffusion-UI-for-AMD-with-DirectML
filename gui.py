@@ -9,7 +9,7 @@ import re
 import time
 import customtkinter
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 from diffusers import (DDPMScheduler, DDIMScheduler, PNDMScheduler, LMSDiscreteScheduler, EulerDiscreteScheduler,
                        EulerAncestralDiscreteScheduler, DPMSolverMultistepScheduler)
 
@@ -34,6 +34,10 @@ class App(customtkinter.CTkFrame):
         customtkinter.set_default_color_theme("dark-blue")  # Themes: blue (default), dark-blue, green
         title_size = 15
         text_size = 12
+
+        # Variable to store image for canvas
+        self.image = None
+        self.smaller_image = None
 
         # Redirecting output to variable
         self.temp_out = io.StringIO()
@@ -363,8 +367,8 @@ class App(customtkinter.CTkFrame):
             generated_seed = self.render(values=values, pipe=self.pipe, width=512, height=512)
 
             # Display generated image
-            new_image = tk.PhotoImage(file=f"{values['Output']}_{generated_seed}.png")
-            self.canvas_out.create_image(0, 0, anchor="nw", image=new_image)
+            self.image = tk.PhotoImage(file=f"{values['Output']}_{generated_seed}.png")
+            self.canvas_out.create_image(0, 0, anchor="nw", image=self.image)
 
         elif mode == "Explore":
             # Get values
@@ -375,7 +379,18 @@ class App(customtkinter.CTkFrame):
                       "Output": self.output_text.get().replace(" ", "_")}
 
             # Start generation script
-            self.explore(values=values, pipe=self.pipe, width=512, height=512)
+            seeds = self.explore(values=values, pipe=self.pipe, width=512, height=512)
+
+            # Display generated image and corresponding seeds
+            self.image = tk.PhotoImage(file=f"images/explore/{values['Output']}_{seeds[0]}.png")
+            self.smaller_image = self.image.subsample(2, 2)
+            self.canvas_out.create_image(0, 0, anchor="nw", image=self.smaller_image)
+
+            # Display seeds
+            self.seed1_var.set(seeds[0])
+            self.seed2_var.set(seeds[1])
+            self.seed3_var.set(seeds[2])
+            self.seed4_var.set(seeds[3])
 
         elif mode == "Variations":
             # Recreate temporary sdterr
@@ -430,10 +445,10 @@ class App(customtkinter.CTkFrame):
                                   name=f"{values['Output']}_{generated_seed}.png")
 
             # Display generated image
-            new_image = tk.PhotoImage(file=f"{values['Output']}_{generated_seed}.png")
+            self.image = tk.PhotoImage(file=f"{values['Output']}_{generated_seed}.png")
             dezoom = len(values_varia1) if len(values_varia1) > len(values_varia2) else len(values_varia2)
-            smaller_image = new_image.subsample(dezoom + 1, dezoom + 1)
-            self.canvas_out.create_image(0, 0, anchor="nw", image=smaller_image)
+            self.smaller_image = self.image.subsample(dezoom + 1, dezoom + 1)
+            self.canvas_out.create_image(0, 0, anchor="nw", image=self.smaller_image)
 
             shutil.rmtree("images/temp")
 
@@ -512,17 +527,6 @@ class App(customtkinter.CTkFrame):
         composite.save(f"images/explore/{values['Output']}_{seeds[0]}.png")
         shutil.rmtree("images/temp")
         seeds = [str(x) for x in seeds]
-
-        # Display generated image and corresponding seeds
-        new_image = tk.PhotoImage(file=f"images/explore/{values['Output']}_{seeds[0]}.png")
-        smaller_image = new_image.subsample(2, 2)
-        self.canvas_out.create_image(0, 0, anchor="nw", image=smaller_image)
-
-        # Display seeds
-        self.seed1_var.set(seeds[0])
-        self.seed2_var.set(seeds[1])
-        self.seed3_var.set(seeds[2])
-        self.seed4_var.set(seeds[3])
 
         # Save parameters
         with open(f"images/explore/{values['Output']}_{seeds[0]}_parameters.txt", "w") as output:

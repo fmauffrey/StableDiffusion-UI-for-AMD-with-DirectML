@@ -14,11 +14,14 @@ import re
 class App(customtkinter.CTkFrame):
     def __init__(self, parent, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.image_input = []
 
         # Redirecting output to variable
         self.temp_out = io.StringIO()
         sys.stderr = self.temp_out
+
+        # Variable to save the image
+        self.image_in = None
+        self.image_out = None
 
         # Check if output folder exists, if not create it
         if not os.path.exists("images"):
@@ -120,7 +123,6 @@ class App(customtkinter.CTkFrame):
         self.canvas_background.place(x=100, y=250)
 
         # Canvas buttons
-        size_value = tk.IntVar(value=25)
         self.canvas_background.bind("<B1-Motion>", self.paint)
         self.color = tk.StringVar()
         self.color.set("white")
@@ -172,9 +174,8 @@ class App(customtkinter.CTkFrame):
         img_resized.save("images/inpaint_input.png")
 
         # Load in Canvas
-        image = tk.PhotoImage(file="images/inpaint_input.png")
-        self.canvas_background.create_image(0, 0, anchor="nw", image=image)
-        self.image_input.append(image)
+        self.image_in = tk.PhotoImage(file="images/inpaint_input.png")
+        self.canvas_background.create_image(0, 0, anchor="nw", image=self.image_in)
 
     def paint(self, event):
         x1, y1 = (event.x - 1), (event.y - 1)
@@ -259,8 +260,8 @@ class App(customtkinter.CTkFrame):
         image.save(f"{values['Output']}.png")
 
         # Display generated image
-        new_image = tk.PhotoImage(file=f"{values['Output']}.png")
-        self.canvas_render.create_image(0, 0, anchor="nw", image=new_image)
+        self.image_out = tk.PhotoImage(file=f"{values['Output']}.png")
+        self.canvas_render.create_image(0, 0, anchor="nw", image=self.image_out)
 
         # Reactivate generate buttons
         self.gen_button.configure(state="normal")
