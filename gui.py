@@ -25,10 +25,6 @@ class App(customtkinter.CTkFrame):
             os.mkdir("images/explore")
             os.mkdir("images/variations")
 
-        # Pipe and scheduler variables
-        self.scheduler = None
-        self.pipe = None
-
         # Graphical parameters
         customtkinter.set_appearance_mode("dark")  # Modes: system (default), light, dark
         customtkinter.set_default_color_theme("dark-blue")  # Themes: blue (default), dark-blue, green
@@ -49,62 +45,47 @@ class App(customtkinter.CTkFrame):
         parent.resizable(False, False)
 
         # Frames
-        self.frame_scheduler_1 = customtkinter.CTkFrame(parent, width=800, height=50, corner_radius=0)
-        self.frame_scheduler_1.pack_propagate(False)
-        self.frame_scheduler_2 = customtkinter.CTkFrame(parent, width=800, height=50, corner_radius=0)
-        self.frame_scheduler_2.pack_propagate(False)
+        self.frame_scheduler = customtkinter.CTkFrame(parent, width=800, height=50, corner_radius=0)
+        self.frame_scheduler.pack_propagate(False)
         self.frame_mode = customtkinter.CTkFrame(parent, width=800, height=50, corner_radius=0)
         self.frame_mode.pack_propagate(False)
         self.frame_params = customtkinter.CTkFrame(parent, width=800, height=300, corner_radius=10)
         self.frame_params.grid_propagate(False)
-        self.frame_scheduler_1.place(x=20, y=50)
-        self.frame_scheduler_2.place(x=20, y=100)
+        self.frame_scheduler.place(x=20, y=50)
         self.frame_mode.place(x=20, y=200)
         self.frame_params.place(x=20, y=310)
 
         # Scheduler options
-        self.scheduler_label = customtkinter.CTkLabel(self, text="Scheduler", text_font=("Arial", title_size))
+        self.scheduler_label = customtkinter.CTkLabel(master=self.frame_scheduler, text="Scheduler",
+                                                      text_font=("Arial", title_size))
         self.scheduler_label.text_label.place(relx=0, rely=0.5, anchor="w")
+        self.model_label = customtkinter.CTkLabel(master=self.frame_scheduler, text="Model",
+                                                  text_font=("Arial", title_size))
+        self.model_label.text_label.place(relx=0, rely=0.5, anchor="w")
+
         self.scheduler_var = tk.StringVar()
-        self.scheduler_button_1 = customtkinter.CTkRadioButton(self.frame_scheduler_1, text="DDPMScheduler",
-                                                               variable=self.scheduler_var,
-                                                               value="DDPMScheduler", command=self.scheduler_choice,
-                                                               text_font=("Arial", text_size))
-        self.scheduler_button_2 = customtkinter.CTkRadioButton(self.frame_scheduler_1, text="DDIMScheduler",
-                                                               variable=self.scheduler_var,
-                                                               value="DDIMScheduler", command=self.scheduler_choice,
-                                                               text_font=("Arial", text_size))
-        self.scheduler_button_3 = customtkinter.CTkRadioButton(self.frame_scheduler_1, text="PNDMScheduler",
-                                                               variable=self.scheduler_var,
-                                                               value="PNDMScheduler", command=self.scheduler_choice,
-                                                               text_font=("Arial", text_size))
-        self.scheduler_button_4 = customtkinter.CTkRadioButton(self.frame_scheduler_1, text="LMSDiscreteScheduler",
-                                                               variable=self.scheduler_var,
-                                                               value="LMSDiscreteScheduler",
-                                                               command=self.scheduler_choice,
-                                                               text_font=("Arial", text_size))
-        self.scheduler_button_5 = customtkinter.CTkRadioButton(self.frame_scheduler_2, text="EulerDiscreteScheduler",
-                                                               variable=self.scheduler_var,
-                                                               value="EulerDiscreteScheduler",
-                                                               command=self.scheduler_choice,
-                                                               text_font=("Arial", text_size))
-        self.scheduler_button_6 = customtkinter.CTkRadioButton(self.frame_scheduler_2,
-                                                               text="EulerAncestralDiscreteScheduler",
-                                                               variable=self.scheduler_var,
-                                                               value="EulerAncestralDiscreteScheduler",
-                                                               command=self.scheduler_choice,
-                                                               text_font=("Arial", text_size))
-        self.scheduler_button_7 = customtkinter.CTkRadioButton(self.frame_scheduler_2,
-                                                               text="DPMSolverMultistepScheduler",
-                                                               variable=self.scheduler_var,
-                                                               value="DPMSolverMultistepScheduler",
-                                                               command=self.scheduler_choice,
-                                                               text_font=("Arial", text_size))
-        self.scheduler_label.place(x=20, y=20)
-        for x in [self.scheduler_button_1, self.scheduler_button_2, self.scheduler_button_3, self.scheduler_button_4,
-                  self.scheduler_button_5,
-                  self.scheduler_button_6, self.scheduler_button_7]:
-            x.pack(expand=True, padx=10, pady=10, side="left", anchor="w")
+        self.combobox_scheduler = customtkinter.CTkComboBox(master=self.frame_scheduler,
+                                                            values=["None", "DDPMScheduler", "DDIMScheduler",
+                                                                    "PNDMScheduler",
+                                                                    "LMSDiscreteScheduler", "EulerDiscreteScheduler",
+                                                                    "EulerAncestralDiscreteScheduler",
+                                                                    "DPMSolverMultistepScheduler"],
+                                                            variable=self.scheduler_var)
+        self.combobox_scheduler.set("None")
+        self.model_var = tk.StringVar()
+        self.combobox_model = customtkinter.CTkComboBox(master=self.frame_scheduler,
+                                                        values=["./stable_diffusion_onnx"],
+                                                        variable=self.model_var)
+        self.combobox_model.set("./stable_diffusion_onnx")
+
+        self.model_button = customtkinter.CTkButton(master=self.frame_scheduler, command=self.load_model,
+                                                    text="Load", text_font=("Arial", text_size), width=100)
+
+        self.scheduler_label.place(x=20, y=10)
+        self.combobox_scheduler.place(x=130, y=10)
+        self.model_label.place(x=350, y=10)
+        self.combobox_model.place(x=430, y=10)
+        self.model_button.place(x=670, y=10)
 
         # Mode options
         self.mode_label = customtkinter.CTkLabel(self, text="Mode", text_font=("Arial", title_size))
@@ -255,27 +236,35 @@ class App(customtkinter.CTkFrame):
         # Trigger the mode button when starting
         self.render_button.invoke()
 
-    def scheduler_choice(self):
-        choice = self.scheduler_var.get()
-        model = "./stable_diffusion_onnx"
-        if choice == "DDPMScheduler":
-            self.scheduler = DDPMScheduler.from_pretrained(model, subfolder="scheduler")
-        elif choice == "DDIMScheduler":
-            self.scheduler = DDIMScheduler.from_pretrained(model, subfolder="scheduler")
-        elif choice == "PNDMScheduler":
-            self.scheduler = PNDMScheduler.from_pretrained(model, subfolder="scheduler")
-        elif choice == "LMSDiscreteScheduler":
-            self.scheduler = LMSDiscreteScheduler.from_pretrained(model, subfolder="scheduler")
-        elif choice == "EulerAncestralDiscreteScheduler":
-            self.scheduler = EulerAncestralDiscreteScheduler.from_pretrained(model, subfolder="scheduler")
-        elif choice == "EulerDiscreteScheduler":
-            self.scheduler = EulerDiscreteScheduler.from_pretrained(model, subfolder="scheduler")
-        elif choice == "DPMSolverMultistepScheduler":
-            self.scheduler = DPMSolverMultistepScheduler.from_pretrained(model, subfolder="scheduler")
+    def load_model(self):
+        choice_scheduler = self.scheduler_var.get()
+        choice_model = self.model_var.get()
 
-        # Load model
-        self.pipe = OnnxStableDiffusionPipeline.from_pretrained(model, revision="onnx", provider="DmlExecutionProvider",
-                                                                safety_checker=None, scheduler=self.scheduler)
+        if choice_scheduler == "None":
+            # Load model
+            self.pipe = OnnxStableDiffusionPipeline.from_pretrained(choice_model, revision="onnx",
+                                                                    provider="DmlExecutionProvider",
+                                                                    safety_checker=None)
+        else:
+            if choice_scheduler == "DDPMScheduler":
+                scheduler = DDPMScheduler.from_pretrained(choice_model, subfolder="scheduler")
+            elif choice_scheduler == "DDIMScheduler":
+                scheduler = DDIMScheduler.from_pretrained(choice_model, subfolder="scheduler")
+            elif choice_scheduler == "PNDMScheduler":
+                scheduler = PNDMScheduler.from_pretrained(choice_model, subfolder="scheduler")
+            elif choice_scheduler == "LMSDiscreteScheduler":
+                scheduler = LMSDiscreteScheduler.from_pretrained(choice_model, subfolder="scheduler")
+            elif choice_scheduler == "EulerAncestralDiscreteScheduler":
+                scheduler = EulerAncestralDiscreteScheduler.from_pretrained(choice_model, subfolder="scheduler")
+            elif choice_scheduler == "EulerDiscreteScheduler":
+                scheduler = EulerDiscreteScheduler.from_pretrained(choice_model, subfolder="scheduler")
+            elif choice_scheduler == "DPMSolverMultistepScheduler":
+                scheduler = DPMSolverMultistepScheduler.from_pretrained(choice_model, subfolder="scheduler")
+
+            # Load model
+            self.pipe = OnnxStableDiffusionPipeline.from_pretrained(choice_model, revision="onnx",
+                                                                    provider="DmlExecutionProvider",
+                                                                    safety_checker=None, scheduler=scheduler)
 
         # Enable generate
         self.gen_button.configure(state="normal")
